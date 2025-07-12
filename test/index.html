@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dog Bark Translator Ultimate</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #121212;
+      color: #eee;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+    }
+    input[type="file"], button {
+      margin: 10px;
+      padding: 10px 20px;
+      font-size: 1rem;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+    }
+    button {
+      background: #4caf50;
+      color: white;
+      transition: background 0.3s ease;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    #result {
+      margin-top: 20px;
+      font-size: 1.2rem;
+      user-select: none;
+    }
+    .phoneme {
+      display: inline-block;
+      background: #2196f3;
+      color: white;
+      padding: 8px 15px;
+      margin: 5px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+      user-select: none;
+    }
+    .phoneme:hover {
+      background: #1769aa;
+    }
+    canvas {
+      margin-top: 20px;
+      border: 1px solid #333;
+      background: #222;
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+      max-width: 100%;
+      height: 150px;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🐶 Dog Bark Translator Ultimate</h1>
+
+  <input type="file" id="audioInput" accept="audio/*" />
+  <button onclick="analyzeAudio()">Analyze Upload</button>
+  <br />
+  <button onclick="startMic()">🎙️ Start Microphone</button>
+  <button onclick="stopMic()">🛑 Stop Microphone</button>
+  <br />
+  <button id="speakBtn" onclick="speakDogWord()" style="display:none;">🗣️ Speak Dog Word</button>
+
+  <canvas id="waveform"></canvas>
+
+  <div id="result"></div>
+
+  <script >
+  // Phoneme frequency bank
+const phonemeBank = {
+  "h": 150,
+  "e": 300,
+  "l": 400,
+  "oʊ": 500,
+  "a": 600,
+  "u": 700,
+  "m": 800,
+  "s": 900
+};
+
+// Dog bark sounds for phonemes (short clips in base64, or URLs)
+// For demo, let's use generated simple bark sounds per phoneme using oscillators.
+// But for real dog barks you'd want actual audio files.
+// Here I'll generate quick barks per phoneme frequency.
+function playDogBarkSound(freq) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'square';
+  osc.frequency.value = freq * 1.5; // distorted pitch for dog bark vibe
+
+  gain.gain.setValueAtTime(0.3, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start();
+  osc.stop(ctx.currentTime + 0.2);
+}
+
+// Store latest dog word for speaking
+let lastDogWord = "";
+
+// Mapping frequency to closest phoneme
+function mapFrequencyToPhoneme(freq) {
+  let closestPhoneme = null;
+  let minDiff = Infinity;
+  for (const phoneme in phonemeBank) {
+    let diff = Math.abs(phonemeBank[phoneme] - freq);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closestPhoneme = phoneme;
+    }
+  }
+  return closestPhoneme;
+}
+
+// Random voice selection for speechSynthesis
+function getRandomVoice() {
+  const voices = speechSynthesis.getVoices();
+  if (voices.length === 0) return null;
+  // Pick a random voice
+  return voices[Math.floor(Math.random() * voices.length)];
+}
+
+// Waveform visualizer setup
+const canvas = document.getElementById('waveform');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth * 0.8;
+canvas.height = 150;
+
+function drawWaveform(dataArray) {
+  ctx.fillStyle = '#222';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#4caf50';
+  ctx.beginPath();
+
+  const sliceWidth = canvas.width / dataArray.length;
+  let x = 0;
+
+  for(let i = 0; i < dataArray.length; i++) {
+    const v = dataArray[i] / 128.0;
+    const y = v * canvas.height / 2;
+
+    if(i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+    x += sliceWidth;
+  }
+  ctx.lineTo(canvas.width, canvas.height/2);
+  ctx.stroke();
+}
+
+// Speak the generated dog word with random voice
+function speakDogWord() {
+  if (lastDogWord === "") return;
+  const utterance = new SpeechSynthesisUtterance(lastDogWord);
+  const voice = getRandomVoice();
+  if (voice) utterance.voice = voice;
+  utterance.pitch = 1.2 + Math.random() * 0.5;
+  utterance.rate = 0.8 + Math.random() * 0.4;
+  speechSynthesis.speak(utterance);
+}
+
+// Play a sine wave tone for phoneme with dog bark overlay
+function playPhoneme(phoneme) {
+  const freq = phonemeBank[phoneme];
+  if (!freq) return;
+
+  // Play dog bark sound effect first
+  playDogBarkSound(freq);
+
+  // Then play pure sine tone after 100ms delay
+  setTimeout(() => {
+    const ctxOsc = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctxOsc.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    osc.connect(ctxOsc.destination);
+    osc.start();
+    osc.stop(ctxOsc.currentTime + 0.5);
+  }, 100);
+}
+
+// Analyze uploaded audio file with OfflineAudioContext
+function analyzeAudio() {
+  const input = document.getElementById("audioInput");
+  if (!input.files.length) {
+    document.getElementById("result").textContent = "Please upload a sound file first!";
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const arrayBuffer = e.target.result;
+    const offlineCtx = new OfflineAudioContext(1, 44100 * 5, 44100); // 5 seconds max
+    offlineCtx.decodeAudioData(arrayBuffer).then(buffer => {
+      processBufferOffline(offlineCtx, buffer);
+    }).catch(() => {
+      document.getElementById("result").textContent = "Failed to decode audio file.";
+    });
+  };
+  reader.readAsArrayBuffer(input.files[0]);
+}
+
+function processBufferOffline(ctx, buffer) {
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;
+
+  source.connect(analyser);
+  analyser.connect(ctx.destination);
+
+  source.start();
+
+  ctx.startRendering().then(renderedBuffer => {
+    const freqData = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(freqData);
+
+    // Visualize waveform of original buffer data
+    drawWaveform(buffer.getChannelData(0));
+
+    handleFrequencyData(ctx.sampleRate, analyser.fftSize, freqData);
+  });
+}
+
+// Shared handler for frequency data to map and display
+function handleFrequencyData(sampleRate, fftSize, freqData) {
+  let frequencies = [];
+  for (let i = 0; i < freqData.length; i++) {
+    frequencies.push({
+      frequency: i * sampleRate / fftSize,
+      value: freqData[i]
+    });
+  }
+
+  frequencies.sort((a, b) => b.value - a.value);
+  let topFrequencies = frequencies.slice(0, 5).map(f => f.frequency.toFixed(2));
+
+  let resultHTML = "<h2>Top Frequencies → Phonemes:</h2>";
+  let dogWord = "";
+
+  topFrequencies.forEach(f => {
+    const phoneme = mapFrequencyToPhoneme(f);
+    dogWord += phoneme;
+    resultHTML += `<span class="phoneme" onclick="playPhoneme('${phoneme}')">${phoneme}</span> `;
+  });
+
+  resultHTML += `<p>🐶 Dog word: <strong>${dogWord}</strong></p>`;
+  document.getElementById("result").innerHTML = resultHTML;
+
+  lastDogWord = dogWord;
+  document.getElementById("speakBtn").style.display = "inline-block";
+}
+
+// === Microphone Section ===
+let micStream, analyser, micContext;
+let analyzing = false;
+const micDataArray = new Float32Array(1024);
+
+function startMic() {
+  if (analyzing) return;
+  analyzing = true;
+
+  micContext = new (window.AudioContext || window.webkitAudioContext)();
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    micStream = micContext.createMediaStreamSource(stream);
+    analyser = micContext.createAnalyser();
+    analyser.fftSize = 2048;
+
+    micStream.connect(analyser);
+
+    visualizeMic();
+    analyzeMicLoop();
+  }).catch(() => {
+    alert("Mic access denied.");
+    analyzing = false;
+  });
+}
+
+function stopMic() {
+  analyzing = false;
+  if (micStream) {
+    micStream.mediaStream.getTracks().forEach(t => t.stop());
+  }
+  clearCanvas();
+  document.getElementById("result").innerHTML = "<p>🛑 Microphone stopped.</p>";
+  document.getElementById("speakBtn").style.display = "none";
+  lastDogWord = "";
+}
+
+function visualizeMic() {
+  if (!analyzing) return;
+  analyser.getByteTimeDomainData(micDataArray);
+
+  drawWaveform(micDataArray);
+
+  requestAnimationFrame(visualizeMic);
+}
+
+function analyzeMicLoop() {
+  if (!analyzing) return;
+
+  const freqData = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(freqData);
+
+  let maxVal = Math.max(...freqData);
+
+  if (maxVal > -60) {
+    handleFrequencyData(micContext.sampleRate, analyser.fftSize, freqData);
+  } else {
+    // silence - clear result & stop analyzing
+    document.getElementById("result").innerHTML = "<p>🔇 Silence detected — analysis stopped.</p>";
+    stopMic();
+    return;
+  }
+  requestAnimationFrame(analyzeMicLoop);
+}
+
+function clearCanvas() {
+  ctx.fillStyle = '#222';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+  </script>
+</body>
+</html>
